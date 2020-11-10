@@ -7,6 +7,8 @@ library(shinydashboard)
 library(DT)
 library(data.table)
 
+library(plotly)
+
 library(reticulate)
 library(dplyr)
 library(tidytext)
@@ -22,13 +24,15 @@ library(foreach)
 library(parallel)
 library(textstem)
 library(gmodels)
+library(tidyquant)
+
 use_condaenv()
 source_python("py_script.py")
+# source_python("py/pipeline_financial_sentiment.py")
+
 source('Rfunctions.R')
 
 # ----------  2. APP_ UI  ----------
-
-
 
 ui <- dashboardPage(
     skin = "black", 
@@ -58,77 +62,102 @@ ui <- dashboardPage(
         br(),
         tags$h3("This application helps to get useful insights from PDF documents"),
 
-            #  2.3.2. Select PDF File & text ----
-        
+            #  2.3.2. Select PDF File ----
         fluidRow(
             box(
-            title = "Select a PDF File", width= 3, 
+            title = "Select a PDF File", width= 10, 
             background = "navy",
             "here's a list of the available files" ,solidHeader = TRUE,
             collapsible = TRUE,
             uiOutput('sel')
-        ),
-        box(
-            title = "PDF Preview", width = 9 ,status = "primary", tags$h3("The text associated with the selected PDF"),solidHeader = T,
-            collapsible = T,
-            textOutput('text')
         )
         ),
+        # box(
+        #     title = "PDF Preview", width = 9 ,status = "primary", tags$h3("The text associated with the selected PDF"),solidHeader = T,
+        #     collapsible = T,
+        #     textOutput('text')
+        # )
+        fluidRow(
+        box(title = "TOPIC WORD-CLOUD",width= 7, height = 500, status = "primary",
+                    solidHeader = T, collapsible = T,
+                    column(width = 9,
+                           plotOutput("wordCloud")),
+
+                    column(width = 3,
+                           br(),
+                           uiOutput("minfreq"),
+                           br(),
+                           uiOutput("maxwords"),
+                           br(),
+                )
+                ),
+        box(title = "table of names entites",width= 5, height = 500, status = "primary",
+                    solidHeader = T, collapsible = T,
+                    dataTableOutput('tab')
+                )
+        ),
+        
         
             #  2.3.3. NAMED ENTITIES TABLE ----
         
-        fluidRow(
-            infoBox(
-                "TABLE", paste0("NAMED ENTITES"), width= 3, icon = icon("list"),
-                color = "navy"
-            ),
-            box(
-                title = "table of names entites",width= 9, status = "primary",
-                solidHeader = T, collapsible = T, 
-                dataTableOutput('tab')
-            )
-            
-        ),
+        # fluidRow(
+        #     infoBox(
+        #         "TABLE", paste0("NAMED ENTITES"), width= 3, icon = icon("list"),
+        #         color = "navy"
+        #     ),
+        #     box(
+        #         title = "table of names entites",width= 9, status = "primary",
+        #         solidHeader = T, collapsible = T, 
+        #         dataTableOutput('tab')
+        #     )
+        #     
+        # ),
         
             #  2.3.4 WORD CLOUD PLOT  ----
         
+        # fluidRow(
+        #     infoBox(
+        #         "TOPIC", paste0("WORD CLOUD"), width= 3, icon = icon("cloud", lib = "glyphicon"),
+        #         color = "navy"
+        #     ),
+        #     box(
+        #         title = "TOPIC WORD-CLOUD",width= 9, status = "primary",
+        #         solidHeader = T, collapsible = T, 
+        #         # plotOutput("wordCloud")
+        #         
+        #         column(width = 8,
+        #                plotOutput("wordCloud")),
+        # 
+        #         column(width = 4,
+        #                br(),
+        #                uiOutput("minfreq"),
+        #                br(),
+        #                uiOutput("maxwords"),
+        #                br(),
+        #     )
+        #     )
+        # ),
+            #  2.3.5 SENTIMENT COMPONENT  ----
         fluidRow(
-            infoBox(
-                "TOPIC", paste0("WORD CLOUD"), width= 3, icon = icon("cloud", lib = "glyphicon"),
-                color = "navy"
-            ),
+            # infoBox(
+            #     "THE", paste0("SENTIMENT COMPONENT"), width=3, icon = icon("heart", lib = "glyphicon"),
+            #     color = "navy"
+            # ),
             box(
-                title = "TOPIC WORD-CLOUD",width= 9, status = "primary",
-                solidHeader = T, collapsible = T, 
-                # plotOutput("wordCloud")
-                
-                column(width = 8,
-                       plotOutput("wordCloud")),
-
-                column(width = 4,
-                       br(),
-                       uiOutput("minfreq"),
-                       br(),
-                       uiOutput("maxwords"),
-                       br(),
-            )
+                title = "SENTIMENT COMPONENT", width=12, status = "primary",
+                solidHeader = T, collapsible = T,
+                plotlyOutput("sentComponent")
             )
         ),
-            #  2.3.5 SENTIMENT COMPONENT  ----
-
+        #  2.3.5 TEXT PREVIEW  ----
         
         fluidRow(
-            infoBox(
-                "THE", paste0("SENTIMENT COMPONENT"), width=3, icon = icon("heart", lib = "glyphicon"),
-                color = "navy"
-            ),
             box(
-                title = "SENTIMENT COMPONENT", width=9, status = "primary",
-                solidHeader = T, collapsible = T,
-                plotOutput("sentComponent")
+                title = "PDF Preview", width = 12 ,status = "success",solidHeader = T,
+                collapsible = T,
+                textOutput('text')
             )
         )
-        
         
     )
     
@@ -141,15 +170,23 @@ server <- function(input, output) {
         #  3.1 load the files   ----
     news <- readRDS('data/BBC_Reuters_GoogleNews_articles_business.rds')
     
+    #  3.4. PDF selection  ----
+    output$sel <- renderUI({
+        selectInput(label = 'Title', inputId = 'selectTab', choices = news$Title, selected = news$Title[1])
+    })
+    
         #  3.2 Named entity table  ----
     output$tab <- renderDataTable({
-        datatable(get_NE(news$Body[1]), filter = 'top',  
+        
+        article<-news[news$Title == input$selectTab,'Body']
+        
+        datatable(get_NE(article), filter = 'top',  
             options = list(pageLength = 5, autoWidth = TRUE),
             rownames= FALSE 
         )
     })
     
-        #  3.3. PDF text output  ----
+         #  3.3. PDF text output  ----
     output$text<-renderText({
         article <- news[news$Title == input$selectTab,'Body']
     })
@@ -174,12 +211,7 @@ server <- function(input, output) {
 
 
 
-        t1<- Sys.time()
         art_rm_NE = NE_Cleansing(art_parg, 'paragraph_num', 'paragraph_text', group = TRUE, rm=FALSE,    Extract_Named_Entities(art_parg) %>% filter(Label %in% c("GPE", "ORG", "PERSON","LOC",'NORP')) %>% select(-Label) %>% unique())
-        t2<- Sys.time()
-        print(t2-t1)
-
-
 
         df = art_rm_NE %>%
             select(paragraph_num, TEXT) %>%
@@ -211,10 +243,7 @@ server <- function(input, output) {
         dtm = df_lemma %>%
             tidytext::cast_dtm(document=id, term=word, value=n)
 
-        #dtm
-
         mod = LDA_optimal(dtm, 2, 10, 5)
-        #mod$Plot
 
         terms = terms(mod$min_perp$model, k=20) %>%
             as.data.frame() %>%
@@ -242,14 +271,7 @@ server <- function(input, output) {
         
 
 })
-    
-    #  3.4. PDF selection  ----
-    output$sel <- renderUI({
-        selectInput(label = 'Title', inputId = 'selectTab', choices = news$Title, selected = news$Title[1])
-    })
-    
-    
-    
+    # wordcloud control
     output$minfreq = renderUI({
         sliderInput("freq",
                     em("Minimum Frequency:",style="color:black;font-size:100%"),
@@ -261,12 +283,66 @@ server <- function(input, output) {
                     min = 1,  max = 300,  value = 200)
     })
     
+    
+    
         #  3.6. sentiment component  ----
-    
-    
-    
-    
-    
+
+    output$sentComponent <- renderPlotly({
+         article<-news[news$Title == input$selectTab,'Body']
+        
+         source_python("py/pipeline_financial_sentiment.py")
+         
+         
+        paragraph_text_tbl <- tibble(
+            # Page Text
+            page_text = article
+        ) %>%
+            rowid_to_column(var = "page_num") %>%
+
+            # Paragraph Text
+            mutate(paragraph_text = str_split(page_text, pattern = "\\.\n")) %>%
+            select(-page_text) %>%
+            unnest(paragraph_text) %>%
+            rowid_to_column(var = "paragraph_num") %>%
+            select(page_num, paragraph_num, paragraph_text)
+         
+         
+        sentiment_classification <- paragraph_text_tbl %>%
+            pull(paragraph_text) %>%
+            pipeline_classification()
+
+        sentiment_regression <- paragraph_text_tbl %>%
+            pull(paragraph_text) %>%
+            pipeline_regression()
+
+        data_prepared_tbl <- paragraph_text_tbl %>%
+            mutate(
+                sentiment_classification = sentiment_classification,
+                sentiment_regression     = sentiment_regression
+            ) %>%
+            mutate(label = str_glue("Page: {page_num}
+                            Paragraph: {paragraph_num}
+                            Sentiment: {round(sentiment_regression)}
+                            ---
+                            {str_wrap(paragraph_text, width = 80)}"))
+
+
+        g <- data_prepared_tbl %>%
+            mutate(sentiment_classification = case_when(
+                sentiment_classification == 0  ~ "neutral",
+                sentiment_classification == 1  ~ "positive",
+                sentiment_classification == -1 ~ "negative"
+            ) %>% factor(levels = c("negative", "neutral", "positive"))) %>%
+            ggplot(aes(sentiment_classification, sentiment_regression, color = sentiment_regression)) +
+            geom_point(aes(text = label,
+                           size = abs(sentiment_regression))) +
+            scale_color_viridis_c() +
+            theme_tq() +
+            coord_flip()
+
+        ggplotly(g, tooltip = "text")
+    })
+
     
 }
 

@@ -42,6 +42,7 @@ ui <- dashboardPage(
                        h1("axefinance - Demo PDF Mining", 
                        style = "font-weight: 450; color: #4d3a7d; font-size: 24px;"),
                     titleWidth = 450
+                    # ,tags$img(src='axefinance.png')
                     ),
     
         #  2.2 SIDEBAR  ----
@@ -55,12 +56,12 @@ ui <- dashboardPage(
         #  2.3 BODY  ----
     dashboardBody(
             #  2.3.1 CSS FILE  ----
-            tags$head(
-            tags$head(rel="stylesheet", type= "text/css", href="custom.css")
-        ),
-        br(),
-        br(),
-        tags$h3("This application helps to get useful insights from PDF documents"),
+        #     tags$head(
+        #     tags$head(rel="stylesheet", type= "text/css", href="custom.css")
+        # ),
+        # br(),
+        # br(),
+        # tags$h3("This application helps to get useful insights from PDF documents"),
 
             #  2.3.2. Select PDF File ----
         fluidRow(
